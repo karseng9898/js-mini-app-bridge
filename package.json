@@ -1,0 +1,25 @@
+{
+  "name": "js-mini-app-bridge-plus",
+  "version": "1.0.0",
+  "description": "",
+  "main": "mini-app-bridge.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/karseng9898/js-mini-app-bridge.git"
+  },
+  "author": "karseng",
+  "license": "ISC",
+  "types": "./mini-app-bridge.d.ts",
+  "bugs": {
+    "url": "https://github.com/karseng9898/js-mini-app-bridge/issues"
+  },
+  "homepage": "https://github.com/karseng9898/js-mini-app-bridge#readme",
+  "files": [
+    "mini-app-bridge.js",
+    "mini-app-bridge.min.js",
+    "mini-app-bridge.d.ts"
+  ]
+}
