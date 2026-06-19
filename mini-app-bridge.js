@@ -16,10 +16,12 @@
   
   // Storage for parameters and callbacks
   let paramsStore = {};
+  let defaultMeta = {};
   let callbackRegistry = {};
   let requestIdCounter = 1;
   const timeoutDuration = 60000;
   let eventListeners = {};
+  const SENSITIVE_KEY_PATTERN = /authorization|token|password|secret|cookie|api[-_]?key/i;
   
   // Helper function to generate unique request IDs
   function generateRequestId() {
@@ -31,9 +33,67 @@
     try {
       return typeof str === 'string' ? JSON.parse(str) : str;
     } catch (e) {
-      logger.error('Invalid JSON:', str, e);
+      logger.error('Invalid JSON received:', e);
       return null;
     }
+  }
+
+  function isPlainObject(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  function isSensitiveKey(key) {
+    return SENSITIVE_KEY_PATTERN.test(String(key));
+  }
+
+  function redactSensitiveData(value, seen) {
+    if (typeof value !== 'object' || value === null) {
+      return value;
+    }
+
+    const activeSeen = seen || new WeakSet();
+    if (activeSeen.has(value)) {
+      return '[Circular]';
+    }
+    activeSeen.add(value);
+
+    if (Array.isArray(value)) {
+      const redactedArray = value.map(item => redactSensitiveData(item, activeSeen));
+      activeSeen.delete(value);
+      return redactedArray;
+    }
+
+    const redactedObject = {};
+    Object.keys(value).forEach(key => {
+      redactedObject[key] = isSensitiveKey(key) ? '[REDACTED]' : redactSensitiveData(value[key], activeSeen);
+    });
+    activeSeen.delete(value);
+    return redactedObject;
+  }
+
+  function normalizeMeta(meta, label) {
+    if (meta === undefined || meta === null) {
+      return {};
+    }
+    if (!isPlainObject(meta)) {
+      throw new Error(`${label} must be an object`);
+    }
+    return { ...meta };
+  }
+
+  function normalizeCallOptions(options) {
+    if (options === undefined || options === null) {
+      return {};
+    }
+    if (!isPlainObject(options)) {
+      throw new Error('call options must be an object');
+    }
+
+    const normalizedOptions = { ...options };
+    if ('meta' in normalizedOptions) {
+      normalizedOptions.meta = normalizeMeta(normalizedOptions.meta, 'options.meta');
+    }
+    return normalizedOptions;
   }
   
   // Bridge implementation with enhanced timeout management
@@ -42,7 +102,7 @@
     version: VERSION,
     
     // Call a native method
-    call(className, methodName, params = {}) {
+    call(className, methodName, params = {}, options = {}) {
       return new Promise((resolve, reject) => {
         // Validate inputs
         if (typeof className !== 'string' || !className) {
@@ -53,8 +113,37 @@
           reject(new Error('Invalid methodName'));
           return;
         }
+
+        let callOptions;
+        try {
+          callOptions = normalizeCallOptions(options);
+        } catch (e) {
+          logger.error('Invalid call options:', e);
+          reject(e);
+          return;
+        }
         
         const requestId = generateRequestId();
+        const meta = { ...defaultMeta, ...(callOptions.meta || {}) };
+        const payloadObject = {
+          id: requestId,
+          className: className,
+          method: methodName,
+          params: params
+        };
+
+        if (Object.keys(meta).length > 0) {
+          payloadObject.meta = meta;
+        }
+
+        let payload;
+        try {
+          payload = JSON.stringify(payloadObject);
+        } catch (e) {
+          reject(new Error(`Failed to serialize message: ${e.message}`));
+          return;
+        }
+
         // Set a timeout for the request and store the timeout ID
         const timeoutId = setTimeout(() => {
           if (callbackRegistry[requestId]) {
@@ -64,14 +153,7 @@
         
         callbackRegistry[requestId] = { resolve, reject, timestamp: Date.now(), timeoutId };
         
-        const payload = JSON.stringify({
-          id: requestId,
-          className: className,
-          method: methodName,
-          params: params
-        });
-        
-        logger.log(`Sending to Flutter:`, payload);
+        logger.log(`Sending to Flutter:`, redactSensitiveData(payloadObject));
         
         // Check if the communication channel exists
         if (window.SuperAppChannel) {
@@ -95,7 +177,7 @@
     handleSuccess(requestId, response) {
       if (callbackRegistry[requestId]) {
         clearTimeout(callbackRegistry[requestId].timeoutId);
-        logger.log('Success Response:', response);
+        logger.log('Success Response:', redactSensitiveData(response));
         const duration = Date.now() - callbackRegistry[requestId].timestamp;
         logger.log(`Request took ${duration}ms`);
         callbackRegistry[requestId].resolve(response);
@@ -107,7 +189,7 @@
     handleFailure(requestId, error) {
       if (callbackRegistry[requestId]) {
         clearTimeout(callbackRegistry[requestId].timeoutId);
-        logger.error('Error Response:', error);
+        logger.error('Error Response:', redactSensitiveData(error));
         callbackRegistry[requestId].reject(error);
         delete callbackRegistry[requestId];
       }
@@ -152,7 +234,7 @@
     
     // Dispatch events to registered listeners
     dispatchEvent(eventName, data) {
-      logger.log(`Dispatching event '${eventName}' with data:`, data);
+      logger.log(`Dispatching event '${eventName}' with data:`, redactSensitiveData(data));
       
       if (!eventListeners[eventName]) {
         return;
@@ -179,7 +261,7 @@
         return;
       }
       paramsStore = { ...paramsStore, ...newParams };
-      logger.log('Params updated:', paramsStore);
+      logger.log('Params updated:', redactSensitiveData(paramsStore));
       // Dispatch a 'paramsUpdated' event
       bridge.dispatchEvent('paramsUpdated', paramsStore);
     },
@@ -188,13 +270,36 @@
     getParams(key) {
       return key ? paramsStore[key] : { ...paramsStore };
     },
+
+    // Configure metadata that should be sent with every bridge request.
+    setDefaultMeta(meta = {}) {
+      try {
+        defaultMeta = normalizeMeta(meta, 'meta');
+      } catch (e) {
+        logger.error('Invalid default metadata:', e);
+        throw e;
+      }
+
+      logger.log('Default metadata updated:', redactSensitiveData(defaultMeta));
+    },
+
+    // Retrieve configured default metadata.
+    getDefaultMeta() {
+      return { ...defaultMeta };
+    },
+
+    // Clear configured default metadata.
+    clearDefaultMeta() {
+      defaultMeta = {};
+      logger.log('Default metadata cleared');
+    },
     
     // Process incoming messages from the SuperApp
     receiveMessage(response) {
       try {
-        logger.log('Received from Flutter:', response);
         const res = safeParseJSON(response);
         if (!res) return;
+        logger.log('Received from Flutter:', redactSensitiveData(res));
         
         // If it's an event, dispatch it
         if (res.event) {
