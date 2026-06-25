@@ -1,10 +1,14 @@
 {
   "name": "js-mini-app-bridge-plus",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "",
   "main": "mini-app-bridge.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "npm run build:minify",
+    "build:minify": "terser mini-app-bridge.js -o mini-app-bridge.min.js -c -m --comments false",
+    "test": "node --test test/*.test.js",
+    "test:types": "tsc -p tsconfig.types.json",
+    "check": "npm run build && npm test && npm run test:types && node --check mini-app-bridge.js && node --check mini-app-bridge.min.js"
   },
   "repository": {
     "type": "git",
@@ -17,6 +21,10 @@
     "url": "https://github.com/karseng9898/js-mini-app-bridge/issues"
   },
   "homepage": "https://github.com/karseng9898/js-mini-app-bridge#readme",
+  "devDependencies": {
+    "terser": "^5.48.0",
+    "typescript": "^6.0.3"
+  },
   "files": [
     "mini-app-bridge.js",
     "mini-app-bridge.min.js",

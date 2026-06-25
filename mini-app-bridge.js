@@ -2,7 +2,7 @@
 (function(global, lib) {
   'use strict';
   
-  const VERSION = '0.1.0';
+  const VERSION = '1.0.2';
   const DEBUG = true; // Set to false for production
   
   // Logging utility with basic log levels

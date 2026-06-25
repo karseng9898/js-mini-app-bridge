@@ -12,8 +12,10 @@
 - `README.md` is minimal. Update it when changing public usage, exported API, install instructions, or host integration behavior.
 
 ## Commands
-- `npm test` is currently a placeholder that exits with an error. Do not treat it as a meaningful validation command until a real test suite is added.
-- If you add a build, minify, lint, or test workflow, wire it into `package.json` scripts and document the command here.
+- `npm run build` regenerates `mini-app-bridge.min.js` with Terser.
+- `npm test` runs the Node runtime tests.
+- `npm run test:types` validates the TypeScript declarations.
+- `npm run check` runs the build, runtime tests, type tests, and JavaScript syntax checks.
 
 ## Code conventions
 - Keep the bridge usable directly in browsers without a bundler.
